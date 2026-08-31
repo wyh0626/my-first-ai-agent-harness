@@ -11,14 +11,44 @@ const SAFE_PREFIXES = [
     "head", "tail", "wc", "git log", "git status", "git diff",
 ];
 
+
+//白名单内直接执行，其他命令需要审批
+//所有命令都不需要审批
+//只允许父 Agent 授予的命令范围
+type ApprovalConfig =
+    | { mode: "interactive" }
+    | { mode: "background" }
+    | { mode: "delegated"; trust: string[] };
+
+
+function createApproval(config: ApprovalConfig) {
+    return ({ command }: { command: string }) => {
+        if (config.mode === "background") {
+            return false;
+        }
+
+        if (config.mode === "delegated") {
+            return !config.trust.some(prefix =>
+                command.trim().startsWith(prefix)
+            );
+        }
+
+        return !SAFE_PREFIXES.some(prefix =>
+            command.trim().startsWith(prefix)
+        );
+    };
+}
+
+
+
+
 interface BashOperations {
     exec(command: string): Promise<{ stdout: string; exitCode: number }>;
 }
 
-function createBashTool(operations: BashOperations, safePrefixes: string[]) {
-    function isSafe(command: string): boolean {
-        return safePrefixes.some((p) => command.trim().startsWith(p));
-    }
+function createBashTool( operations: BashOperations,
+                         needsApproval: (input: { command: string }) => boolean,
+ ) {
 
     return tool({
         description: `Execute a shell command in the working directory.
@@ -37,9 +67,10 @@ USAGE: command is a single shell string. Commands not in the safe-prefix
             command: z.string().describe("Shell command to execute"),
         }),
         execute: async ({ command }) => {
-            if (!isSafe(command)) {
+            if (needsApproval({ command })) {
                 return `Blocked: "${command}" requires approval.`;
             }
+
             const { stdout } = await operations.exec(command);
             return stdout || "(no output)";
         },
@@ -65,7 +96,10 @@ const localOps: BashOperations = {
 };
 
 
-const bash = createBashTool(localOps, SAFE_PREFIXES);
+const bash =createBashTool(
+    localOps,
+    createApproval({ mode: "interactive" })
+);
 
 
 
