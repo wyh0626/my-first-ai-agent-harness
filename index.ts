@@ -2,10 +2,12 @@ import { deepseek } from "@ai-sdk/deepseek";
 import { ToolLoopAgent, stepCountIs, tool } from "ai";
 import { z } from "zod";
 
-import { resolve } from "node:path";
-import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { buildSystemPrompt } from "./src/system";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+
 
 const SAFE_PREFIXES = [
     "ls", "cat", "echo", "pwd", "which", "find",
@@ -104,7 +106,14 @@ const bash =createBashTool(
 
 
 
-const cwd = process.argv[2] || process.cwd();
+const cwd = resolve(process.argv[2] || process.cwd());
+
+const agentsPath = join(cwd, "AGENTS.md");
+
+const projectContext = existsSync(agentsPath)
+    ? readFileSync(agentsPath, "utf-8")
+    : undefined;
+
 
 const read  = tool({
     description: `Read a file from the project. Returns numbered lines.
@@ -210,19 +219,14 @@ const tools = { read, grep, bash };
 const instructions = buildSystemPrompt({
     workingDirectory: cwd,
     sandboxType: "local",
-    toolNames: Object.keys({ read, grep, bash }),
+    toolNames: Object.keys(tools),
+    projectContext,
 });
 
 
 
 
-console.log(
-    buildSystemPrompt({
-        workingDirectory: cwd,
-        sandboxType: "local",
-        toolNames: Object.keys(tools),
-    })
-);
+console.log(instructions);
 
 
 const agent = new ToolLoopAgent({
