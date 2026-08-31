@@ -5,12 +5,12 @@ import { z } from "zod";
 import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { buildSystemPrompt } from "./src/system";
 
 const SAFE_PREFIXES = [
     "ls", "cat", "echo", "pwd", "which", "find",
     "head", "tail", "wc", "git log", "git status", "git diff",
 ];
-
 
 //白名单内直接执行，其他命令需要审批
 //所有命令都不需要审批
@@ -205,25 +205,33 @@ EXAMPLES:
 
 
 
+const tools = { read, grep, bash };
+
+const instructions = buildSystemPrompt({
+    workingDirectory: cwd,
+    sandboxType: "local",
+    toolNames: Object.keys({ read, grep, bash }),
+});
+
+
+
+
+console.log(
+    buildSystemPrompt({
+        workingDirectory: cwd,
+        sandboxType: "local",
+        toolNames: Object.keys(tools),
+    })
+);
 
 
 const agent = new ToolLoopAgent({
     model: deepseek("deepseek-v4-flash"),
-    instructions: `You are a coding agent working in: ${cwd}
-
-    # Agency
-    - USE your tools. Read files, search code, run commands, then answer.
-    - Do NOT explain what you WOULD do. Actually do it.
-    - Prefer grep for searching, read for viewing files.
-    - Use bash only for commands that aren't covered by other tools.
-    
-    # Guardrails
-    - Prefer simple, minimal changes
-    - Search before creating, and reuse existing patterns
-    - No new dependencies without asking`,
-    tools: {read,grep,bash},
+    instructions,
+    tools: { read, grep, bash },
     stopWhen: stepCountIs(10),
 });
+
 
 const prompt = process.argv.slice(3).join(" ") || "Hello!";
 const { text, steps } = await agent.generate({ prompt });
